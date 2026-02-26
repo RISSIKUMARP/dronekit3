@@ -30,7 +30,7 @@ if not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = input("OpenAI API key: ")
 
 # Connect to the vehicle - this is the default for Mission Planner SITL
-connection_string = 'tcp:127.0.0.1:5760'
+connection_string = 'tcp:127.0.0.1:5763'
 vehicle = connect(connection_string, wait_ready=True, baud=57600, rate=60)
 vehicle.mode = "GUIDED"
 print("Vehicle Connected.")
