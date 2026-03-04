@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/Scripts/python.exe",
+  // ↑ Tells VS Code to use YOUR venv Python, not system Python
+  
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  // ↑ Hides annoying cache files from sidebar
+  
+  "explorer.fileNesting.enabled": true
+  // ↑ Groups related files together in sidebar
+}
