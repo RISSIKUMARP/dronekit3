@@ -1,174 +1,219 @@
 """
-GeoJSON database interface for conservation targets and observations.
-Provides TargetStore and ObservationStore classes for spatial queries.
+Database interface layer for GeoJSON conservation data.
+TargetStore: read/query targets.geojson
+ObservationStore: read/write observations.geojson, update target visit metadata
 """
 
 import json
-from typing import List, Dict, Optional
+from datetime import datetime, timezone
 from pathlib import Path
-from tools.spatial_tools import haversine_distance, validate_coordinates
+from typing import Optional
+
+from tools.spatial_tools import haversine_distance
 
 
 class TargetStore:
-    """Interface for querying conservation targets from GeoJSON database."""
-    
-    def __init__(self, geojson_path: str):
-        """
-        Initialize target store with GeoJSON file.
-        
-        Args:
-            geojson_path: Path to targets.geojson file
-        """
-        self.geojson_path = Path(geojson_path)
-        self.targets = self._load_targets()
-    
-    def _load_targets(self) -> List[Dict]:
-        """Load all targets from GeoJSON file."""
-        if not self.geojson_path.exists():
-            raise FileNotFoundError(f"GeoJSON database not found at {self.geojson_path}")
-        
-        with open(self.geojson_path, 'r') as f:
-            data = json.load(f)
-        
-        return data.get('features', [])
-    
-    def nearest(self, lat: float, lon: float) -> Optional[Dict]:
-        """
-        Find target nearest to given coordinates.
-        
-        Args:
-            lat: Latitude in decimal degrees
-            lon: Longitude in decimal degrees
-        
-        Returns:
-            Target dict with added 'distance_m' field, or None if no targets
-        """
-        valid, error = validate_coordinates(lat, lon)
-        if not valid:
-            raise ValueError(error)
-        
-        if not self.targets:
+    """
+    Read-only interface to targets.geojson.
+    Loads features into memory on init. Call reload() to pick up external changes.
+    """
+
+    def __init__(self, geojson_path):
+        self.path = Path(geojson_path)
+        self._data = None
+        self._load()
+
+    def _load(self):
+        with open(self.path, "r", encoding="utf-8") as f:
+            self._data = json.load(f)
+
+    def reload(self):
+        self._load()
+
+    def _save(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, indent=2, ensure_ascii=False)
+
+    def nearest(self, lat: float, lon: float) -> Optional[dict]:
+        """Return the target closest to (lat, lon) with a distance_m key injected."""
+        features = self._data.get("features", [])
+        if not features:
             return None
-        
-        nearest_target = None
-        min_distance = float('inf')
-        
-        for target in self.targets:
-            target_lon, target_lat = target['geometry']['coordinates']
-            distance = haversine_distance(lat, lon, target_lat, target_lon)
-            
-            if distance < min_distance:
-                min_distance = distance
-                nearest_target = target
-        
-        if nearest_target:
-            result = nearest_target.copy()
-            result['distance_m'] = round(min_distance, 1)
+
+        best = None
+        best_dist = float("inf")
+
+        for feature in features:
+            coords = feature["geometry"]["coordinates"]
+            t_lon, t_lat = coords[0], coords[1]
+            dist = haversine_distance(lat, lon, t_lat, t_lon)
+            if dist < best_dist:
+                best_dist = dist
+                best = feature
+
+        if best:
+            result = dict(best)
+            result["distance_m"] = round(best_dist, 2)
             return result
-        
         return None
-    
-    def find_by_name(self, name: str) -> Optional[Dict]:
-        """
-        Find target by name or ID (case-insensitive).
-        
-        Args:
-            name: Target name or ID to search for
-        
-        Returns:
-            Target dict or None if not found
-        """
+
+    def find_by_name(self, name: str) -> Optional[dict]:
+        """Case-insensitive search by target name or ID."""
         name_lower = name.lower()
-        
-        for target in self.targets:
-            target_name = target['properties']['name'].lower()
-            target_id = target['id'].lower()
-            
-            if name_lower in target_name or name_lower in target_id:
-                return target
-        
+        for feature in self._data.get("features", []):
+            if feature["id"].lower() == name_lower:
+                return feature
+            if feature["properties"]["name"].lower() == name_lower:
+                return feature
         return None
-    
+
     def list_all(
         self,
         priority: Optional[str] = None,
         target_type: Optional[str] = None,
         min_visits: Optional[int] = None,
-        max_visits: Optional[int] = None
-    ) -> List[Dict]:
+        max_visits: Optional[int] = None,
+    ) -> list:
+        """Return features filtered by optional criteria."""
+        results = []
+        for feature in self._data.get("features", []):
+            props = feature["properties"]
+            if priority and props.get("priority") != priority:
+                continue
+            if target_type and props.get("target_type") != target_type:
+                continue
+            visits = props.get("visit_count", 0)
+            if min_visits is not None and visits < min_visits:
+                continue
+            if max_visits is not None and visits > max_visits:
+                continue
+            results.append(feature)
+        return results
+
+    def update_visit_metadata(self, target_name: str, timestamp: str):
         """
-        Get all targets with optional filters.
-        
-        Args:
-            priority: Filter by priority ('high', 'medium', 'low')
-            target_type: Filter by type ('wildlife_habitat', 'water_source', etc.)
-            min_visits: Minimum visit count
-            max_visits: Maximum visit count
-        
-        Returns:
-            List of target dicts matching filters
+        Increment visit_count and set last_visited on a target.
+        Called by ObservationStore.add_observation() — not exposed as an Agno tool.
         """
-        filtered = self.targets
-        
-        if priority:
-            filtered = [t for t in filtered 
-                       if t['properties']['priority'].lower() == priority.lower()]
-        
-        if target_type:
-            filtered = [t for t in filtered 
-                       if t['properties']['target_type'].lower() == target_type.lower()]
-        
-        if min_visits is not None:
-            filtered = [t for t in filtered 
-                       if t['properties']['visit_count'] >= min_visits]
-        
-        if max_visits is not None:
-            filtered = [t for t in filtered 
-                       if t['properties']['visit_count'] <= max_visits]
-        
-        return filtered
-    
-    def reload(self):
-        """Reload targets from disk (useful after external updates)."""
-        self.targets = self._load_targets()
+        for feature in self._data.get("features", []):
+            props = feature["properties"]
+            if props["name"].lower() == target_name.lower():
+                props["visit_count"] = props.get("visit_count", 0) + 1
+                props["last_visited"] = timestamp
+                self._save()
+                return True
+        return False
+
+    def update_field(self, target_name: str, field: str, value) -> bool:
+        """
+        Set an arbitrary top-level property field on a target.
+        Used by update_target_metadata tool. Restricted to safe fields.
+        """
+        allowed = {"priority", "description", "notes", "altitude_m"}
+        if field not in allowed:
+            raise ValueError(f"Field '{field}' is not patchable. Allowed: {allowed}")
+
+        for feature in self._data.get("features", []):
+            if feature["properties"]["name"].lower() == target_name.lower():
+                feature["properties"][field] = value
+                self._save()
+                return True
+        return False
 
 
 class ObservationStore:
     """
-    Interface for logging and querying observations.
-    Will be implemented in Day 4 Data Agent.
+    Persistence layer for ObservationFeature objects.
+
+    Writes to data/observations.geojson (separate from targets.geojson).
+    Each stored feature gets a target_name injected into properties so
+    observations can be filtered by target without a join.
+
+    Also updates visit_count and last_visited on the parent target via TargetStore.
     """
-    
-    def __init__(self, geojson_path: str):
+
+    def __init__(self, observations_path, target_store: TargetStore):
+        self.path = Path(observations_path)
+        self.target_store = target_store
+        self._ensure_file()
+
+    def _ensure_file(self):
+        """Create an empty FeatureCollection if the file does not exist."""
+        if not self.path.exists():
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            empty = {
+                "type": "FeatureCollection",
+                "metadata": {
+                    "description": "AVA drone observation records",
+                    "created": datetime.now(timezone.utc).isoformat(),
+                },
+                "features": [],
+            }
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(empty, f, indent=2)
+
+    def _load(self) -> dict:
+        with open(self.path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save(self, data: dict):
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def add_observation(self, target_name: str, observation_feature: dict) -> str:
         """
-        Initialize observation store with GeoJSON file.
-        
+        Persist an ObservationFeature dict to observations.geojson.
+
+        Injects target_name into properties. Updates visit metadata on the
+        parent target in targets.geojson.
+
         Args:
-            geojson_path: Path to targets.geojson file
-        """
-        self.geojson_path = Path(geojson_path)
-    
-    def add_observation(self, target_id: str, observation: Dict) -> bool:
-        """
-        Add observation to target's history.
-        
-        Args:
-            target_id: Target ID to add observation to
-            observation: Observation dict to append
-        
+            target_name: Name of the target this observation belongs to.
+            observation_feature: Dict representation of an ObservationFeature.
+
         Returns:
-            True if successful, False otherwise
+            The observation ID that was written.
+
+        Raises:
+            ValueError: If target_name does not match any target in TargetStore.
         """
-        raise NotImplementedError("ObservationStore.add_observation not yet implemented")
-    
-    def get_observations(self, target_id: str) -> List[Dict]:
+        target = self.target_store.find_by_name(target_name)
+        if not target:
+            raise ValueError(f"Target '{target_name}' not found in targets.geojson")
+
+        # Inject target_name so observations are filterable without a join
+        observation_feature["properties"]["target_name"] = target["properties"]["name"]
+
+        data = self._load()
+        data["features"].append(observation_feature)
+        self._save(data)
+
+        # Update parent target visit metadata
+        ts = observation_feature["properties"].get(
+            "timestamp", datetime.now(timezone.utc).isoformat()
+        )
+        self.target_store.update_visit_metadata(target["properties"]["name"], ts)
+
+        return observation_feature["id"]
+
+    def get_observations(self, target_name: str) -> list:
         """
-        Get all observations for a target.
-        
+        Return all observation features for a given target name.
+
         Args:
-            target_id: Target ID to query
-        
+            target_name: Case-insensitive target name to filter by.
+
         Returns:
-            List of observation dicts
+            List of ObservationFeature dicts. Empty list if none found.
         """
-        raise NotImplementedError("ObservationStore.get_observations not yet implemented")
+        data = self._load()
+        name_lower = target_name.lower()
+        return [
+            f for f in data["features"]
+            if f.get("properties", {}).get("target_name", "").lower() == name_lower
+        ]
+
+    def list_observation_ids(self) -> list:
+        """Return all observation IDs across all targets."""
+        data = self._load()
+        return [f["id"] for f in data["features"]]

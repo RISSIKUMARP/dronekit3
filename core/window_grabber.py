@@ -267,8 +267,8 @@ if __name__ == "__main__":
     Captures a window titled "Mounts", displays outline, and streams to localhost:8080.
     """
 
-    LEFT = -640      # Right side of left monitor
-    WIN_BAR_HEIGHT = 50   # Near top
+    LEFT = 100           # Pixels from left edge
+    WIN_BAR_HEIGHT = 100 # Pixels from top
     XNUDGE = 10
     YNUDGE = 4
     FRAME_WIDTH = 640
