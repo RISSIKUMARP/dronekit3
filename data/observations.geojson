@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "description": "AVA drone observation records",
+    "created": "2026-03-26T22:03:41.931617+00:00"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "b8e1035b-00b1-4833-8e09-4efa9e0d6136",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -105.2705,
+          40.015
+        ]
+      },
+      "properties": {
+        "timestamp": "2026-03-26T22:03:41.932617+00:00",
+        "observer": "vision_agent",
+        "detections": [
+          {
+            "label": "Golden Eagle",
+            "confidence": 0.92,
+            "bbox": null,
+            "attributes": {}
+          }
+        ],
+        "image_path": "data/images/test.jpg",
+        "confidence": 0.92,
+        "notes": "Test save",
+        "weather": "clear",
+        "target_name": "North Ridge Eagle Nest"
+      }
+    }
+  ]
+}

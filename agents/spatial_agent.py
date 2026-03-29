@@ -13,7 +13,6 @@ from tools.spatial_tools import format_distance
 
 GEOJSON_PATH = Path(__file__).parent.parent / "data" / "targets.geojson"
 
-# Module-level TargetStore instance (shared across all tool calls)
 target_store = TargetStore(GEOJSON_PATH)
 
 
@@ -38,7 +37,7 @@ def get_nearest_target(lat: float, lon: float) -> str:
         if not nearest:
             return json.dumps({"error": "No targets in database"})
         
-        # Build response with target details
+
         result = {
             "target_id": nearest['id'],
             "name": nearest['properties']['name'],

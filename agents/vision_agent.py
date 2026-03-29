@@ -23,9 +23,9 @@ from schemas.geojson_schema import (
 )
 
 
-_grabber = None       # Threaded_Window_Grabber instance
-_api_key = None       # OpenRouter API key
-_model = "qwen/qwen3-vl-32b-instruct"
+_grabber = None       
+_api_key = None      
+_model = "qwen/qwen3-vl-32b-instruct" #qwen 3.5 35B-A3B
 _images_dir = Path(__file__).parent.parent / "data" / "images"
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
